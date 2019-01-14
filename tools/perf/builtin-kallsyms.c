@@ -7,6 +7,7 @@
  *
  * Released under the GPL v2. (and only v2, not any later version)
  */
+#include <inttypes.h>
 #include "builtin.h"
 #include <linux/compiler.h>
 #include <subcmd/parse-options.h>
@@ -26,7 +27,7 @@ static int __cmd_kallsyms(int argc, const char **argv)
 
 	for (i = 0; i < argc; ++i) {
 		struct map *map;
-		struct symbol *symbol = machine__find_kernel_function_by_name(machine, argv[i], &map);
+		struct symbol *symbol = machine__find_kernel_symbol_by_name(machine, argv[i], &map);
 
 		if (symbol == NULL) {
 			printf("%s: not found\n", argv[i]);
@@ -43,7 +44,7 @@ static int __cmd_kallsyms(int argc, const char **argv)
 	return 0;
 }
 
-int cmd_kallsyms(int argc, const char **argv, const char *prefix __maybe_unused)
+int cmd_kallsyms(int argc, const char **argv)
 {
 	const struct option options[] = {
 	OPT_INCR('v', "verbose", &verbose, "be more verbose (show counter open errors, etc)"),

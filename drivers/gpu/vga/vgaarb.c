@@ -1,6 +1,6 @@
 /*
  * vgaarb.c: Implements the VGA arbitration. For details refer to
- * Documentation/vgaarbiter.txt
+ * Documentation/gpu/vgaarbiter.rst
  *
  *
  * (C) Copyright 2005 Benjamin Herrenschmidt <benh@kernel.crashing.org>
@@ -417,7 +417,7 @@ int vga_get(struct pci_dev *pdev, unsigned int rsrc, int interruptible)
 {
 	struct vga_device *vgadev, *conflict;
 	unsigned long flags;
-	wait_queue_t wait;
+	wait_queue_entry_t wait;
 	int rc = 0;
 
 	vga_check_first_use();
@@ -676,7 +676,7 @@ static bool vga_arbiter_add_pci_device(struct pci_dev *pdev)
 	vga_arbiter_check_bridge_sharing(vgadev);
 
 	/* Add to the list */
-	list_add(&vgadev->list, &vga_list);
+	list_add_tail(&vgadev->list, &vga_list);
 	vga_count++;
 	vgaarb_info(&pdev->dev, "VGA device added: decodes=%s,owns=%s,locks=%s\n",
 		vga_iostate_to_str(vgadev->decodes),
@@ -1266,12 +1266,12 @@ done:
 	return ret_val;
 }
 
-static unsigned int vga_arb_fpoll(struct file *file, poll_table *wait)
+static __poll_t vga_arb_fpoll(struct file *file, poll_table *wait)
 {
 	pr_debug("%s\n", __func__);
 
 	poll_wait(file, &vga_wait_queue, wait);
-	return POLLIN;
+	return EPOLLIN;
 }
 
 static int vga_arb_open(struct inode *inode, struct file *file)
@@ -1402,29 +1402,26 @@ static struct miscdevice vga_arb_device = {
 	MISC_DYNAMIC_MINOR, "vga_arbiter", &vga_arb_device_fops
 };
 
-static int __init vga_arb_device_init(void)
+static void __init vga_arb_select_default_device(void)
 {
-	int rc;
 	struct pci_dev *pdev;
 	struct vga_device *vgadev;
 
-	rc = misc_register(&vga_arb_device);
-	if (rc < 0)
-		pr_err("error %d registering device\n", rc);
+#if defined(CONFIG_X86) || defined(CONFIG_IA64)
+	u64 base = screen_info.lfb_base;
+	u64 size = screen_info.lfb_size;
+	u64 limit;
+	resource_size_t start, end;
+	unsigned long flags;
+	int i;
 
-	bus_register_notifier(&pci_bus_type, &pci_notifier);
+	if (screen_info.capabilities & VIDEO_CAPABILITY_64BIT_BASE)
+		base |= (u64)screen_info.ext_lfb_base << 32;
 
-	/* We add all pci devices satisfying vga class in the arbiter by
-	 * default */
-	pdev = NULL;
-	while ((pdev =
-		pci_get_subsys(PCI_ANY_ID, PCI_ANY_ID, PCI_ANY_ID,
-			       PCI_ANY_ID, pdev)) != NULL)
-		vga_arbiter_add_pci_device(pdev);
+	limit = base + size;
 
 	list_for_each_entry(vgadev, &vga_list, list) {
 		struct device *dev = &vgadev->pdev->dev;
-#if defined(CONFIG_X86) || defined(CONFIG_IA64)
 		/*
 		 * Override vga_arbiter_add_pci_device()'s I/O based detection
 		 * as it may take the wrong device (e.g. on Apple system under
@@ -1433,11 +1430,6 @@ static int __init vga_arb_device_init(void)
 		 * Select the device owning the boot framebuffer if there is
 		 * one.
 		 */
-		resource_size_t start, end, limit;
-		unsigned long flags;
-		int i;
-
-		limit = screen_info.lfb_base + screen_info.lfb_size;
 
 		/* Does firmware framebuffer belong to us? */
 		for (i = 0; i < DEVICE_COUNT_RESOURCE; i++) {
@@ -1452,7 +1444,7 @@ static int __init vga_arb_device_init(void)
 			if (!start || !end)
 				continue;
 
-			if (screen_info.lfb_base < start || limit >= end)
+			if (base < start || limit >= end)
 				continue;
 
 			if (!vga_default_device())
@@ -1461,12 +1453,65 @@ static int __init vga_arb_device_init(void)
 				vgaarb_info(dev, "overriding boot device\n");
 			vga_set_default_device(vgadev->pdev);
 		}
+	}
 #endif
+
+	if (!vga_default_device()) {
+		list_for_each_entry(vgadev, &vga_list, list) {
+			struct device *dev = &vgadev->pdev->dev;
+			u16 cmd;
+
+			pdev = vgadev->pdev;
+			pci_read_config_word(pdev, PCI_COMMAND, &cmd);
+			if (cmd & (PCI_COMMAND_IO | PCI_COMMAND_MEMORY)) {
+				vgaarb_info(dev, "setting as boot device (VGA legacy resources not available)\n");
+				vga_set_default_device(pdev);
+				break;
+			}
+		}
+	}
+
+	if (!vga_default_device()) {
+		vgadev = list_first_entry_or_null(&vga_list,
+						  struct vga_device, list);
+		if (vgadev) {
+			struct device *dev = &vgadev->pdev->dev;
+			vgaarb_info(dev, "setting as boot device (VGA legacy resources not available)\n");
+			vga_set_default_device(vgadev->pdev);
+		}
+	}
+}
+
+static int __init vga_arb_device_init(void)
+{
+	int rc;
+	struct pci_dev *pdev;
+	struct vga_device *vgadev;
+
+	rc = misc_register(&vga_arb_device);
+	if (rc < 0)
+		pr_err("error %d registering device\n", rc);
+
+	bus_register_notifier(&pci_bus_type, &pci_notifier);
+
+	/* We add all PCI devices satisfying VGA class in the arbiter by
+	 * default */
+	pdev = NULL;
+	while ((pdev =
+		pci_get_subsys(PCI_ANY_ID, PCI_ANY_ID, PCI_ANY_ID,
+			       PCI_ANY_ID, pdev)) != NULL)
+		vga_arbiter_add_pci_device(pdev);
+
+	list_for_each_entry(vgadev, &vga_list, list) {
+		struct device *dev = &vgadev->pdev->dev;
+
 		if (vgadev->bridge_has_one_vga)
 			vgaarb_info(dev, "bridge control possible\n");
 		else
 			vgaarb_info(dev, "no bridge control possible\n");
 	}
+
+	vga_arb_select_default_device();
 
 	pr_info("loaded\n");
 	return rc;

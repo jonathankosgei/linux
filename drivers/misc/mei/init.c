@@ -124,8 +124,6 @@ int mei_reset(struct mei_device *dev)
 
 	mei_clear_interrupts(dev);
 
-	mei_synchronize_irq(dev);
-
 	/* we're already in reset, cancel the init timer
 	 * if the reset was called due the hbm protocol error
 	 * we need to call it before hw start
@@ -148,21 +146,12 @@ int mei_reset(struct mei_device *dev)
 	/* fall through and remove the sw state even if hw reset has failed */
 
 	/* no need to clean up software state in case of power up */
-	if (state != MEI_DEV_INITIALIZING &&
-	    state != MEI_DEV_POWER_UP) {
-
-		/* remove all waiting requests */
+	if (state != MEI_DEV_INITIALIZING && state != MEI_DEV_POWER_UP)
 		mei_cl_all_disconnect(dev);
-
-		/* remove entry if already in list */
-		dev_dbg(dev->dev, "remove iamthif from the file list.\n");
-		mei_cl_unlink(&dev->iamthif_cl);
-		mei_amthif_reset_params(dev);
-	}
 
 	mei_hbm_reset(dev);
 
-	dev->rd_msg_hdr = 0;
+	memset(dev->rd_msg_hdr, 0, sizeof(dev->rd_msg_hdr));
 
 	if (ret) {
 		dev_err(dev->dev, "hw_reset failed ret = %d\n", ret);
@@ -225,12 +214,6 @@ int mei_start(struct mei_device *dev)
 			goto err;
 		}
 	} while (ret);
-
-	/* we cannot start the device w/o hbm start message completed */
-	if (dev->dev_state == MEI_DEV_DISABLED) {
-		dev_err(dev->dev, "reset failed");
-		goto err;
-	}
 
 	if (mei_hbm_start_wait(dev)) {
 		dev_err(dev->dev, "HBM haven't started");
@@ -304,6 +287,9 @@ static void mei_reset_work(struct work_struct *work)
 		container_of(work, struct mei_device,  reset_work);
 	int ret;
 
+	mei_clear_interrupts(dev);
+	mei_synchronize_irq(dev);
+
 	mutex_lock(&dev->device_lock);
 
 	ret = mei_reset(dev);
@@ -324,13 +310,18 @@ void mei_stop(struct mei_device *dev)
 {
 	dev_dbg(dev->dev, "stopping the device.\n");
 
+	mutex_lock(&dev->device_lock);
+	dev->dev_state = MEI_DEV_POWER_DOWN;
+	mutex_unlock(&dev->device_lock);
 	mei_cl_bus_remove_devices(dev);
 
 	mei_cancel_work(dev);
 
+	mei_clear_interrupts(dev);
+	mei_synchronize_irq(dev);
+
 	mutex_lock(&dev->device_lock);
 
-	dev->dev_state = MEI_DEV_POWER_DOWN;
 	mei_reset(dev);
 	/* move device to disabled state unconditionally */
 	dev->dev_state = MEI_DEV_DISABLED;
@@ -392,13 +383,11 @@ void mei_device_init(struct mei_device *dev,
 	INIT_LIST_HEAD(&dev->write_waiting_list);
 	INIT_LIST_HEAD(&dev->ctrl_wr_list);
 	INIT_LIST_HEAD(&dev->ctrl_rd_list);
+	dev->tx_queue_limit = MEI_TX_QUEUE_LIMIT_DEFAULT;
 
 	INIT_DELAYED_WORK(&dev->timer_work, mei_timer);
 	INIT_WORK(&dev->reset_work, mei_reset_work);
 	INIT_WORK(&dev->bus_rescan_work, mei_cl_bus_rescan_work);
-
-	INIT_LIST_HEAD(&dev->iamthif_cl.link);
-	INIT_LIST_HEAD(&dev->amthif_cmd_list);
 
 	bitmap_zero(dev->host_clients_map, MEI_CLIENTS_MAX);
 	dev->open_handle_count = 0;

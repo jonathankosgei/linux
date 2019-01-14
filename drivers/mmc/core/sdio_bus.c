@@ -139,7 +139,7 @@ static int sdio_bus_probe(struct device *dev)
 		return -ENODEV;
 
 	ret = dev_pm_domain_attach(dev, false);
-	if (ret == -EPROBE_DEFER)
+	if (ret)
 		return ret;
 
 	/* Unbound SDIO functions are always suspended.
@@ -267,7 +267,7 @@ static void sdio_release_func(struct device *dev)
 	sdio_free_func_cis(func);
 
 	kfree(func->info);
-
+	kfree(func->tmpbuf);
 	kfree(func);
 }
 
@@ -281,6 +281,16 @@ struct sdio_func *sdio_alloc_func(struct mmc_card *card)
 	func = kzalloc(sizeof(struct sdio_func), GFP_KERNEL);
 	if (!func)
 		return ERR_PTR(-ENOMEM);
+
+	/*
+	 * allocate buffer separately to make sure it's properly aligned for
+	 * DMA usage (incl. 64 bit DMA)
+	 */
+	func->tmpbuf = kmalloc(4, GFP_KERNEL);
+	if (!func->tmpbuf) {
+		kfree(func);
+		return ERR_PTR(-ENOMEM);
+	}
 
 	func->card = card;
 

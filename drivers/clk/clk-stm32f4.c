@@ -282,6 +282,7 @@ static const struct stm32f4_gate_data stm32f746_gates[] __initconst = {
 
 	{ STM32F4_RCC_APB2ENR,  0,	"tim1",		"apb2_mul" },
 	{ STM32F4_RCC_APB2ENR,  1,	"tim8",		"apb2_mul" },
+	{ STM32F4_RCC_APB2ENR,  7,	"sdmmc2",	"sdmux"    },
 	{ STM32F4_RCC_APB2ENR,  8,	"adc1",		"apb2_div" },
 	{ STM32F4_RCC_APB2ENR,  9,	"adc2",		"apb2_div" },
 	{ STM32F4_RCC_APB2ENR, 10,	"adc3",		"apb2_div" },
@@ -315,7 +316,7 @@ static const u64 stm32f46xx_gate_map[MAX_GATE_MAP] = { 0x000000f17ef417ffull,
 
 static const u64 stm32f746_gate_map[MAX_GATE_MAP] = { 0x000000f17ef417ffull,
 						      0x0000000000000003ull,
-						      0x04f77f033e01c9ffull };
+						      0x04f77f833e01c9ffull };
 
 static const u64 *stm32f4_gate_map;
 
@@ -429,6 +430,13 @@ static const struct clk_div_table pll_divp_table[] = {
 	{ 0, 2 }, { 1, 4 }, { 2, 6 }, { 3, 8 }, { 0 }
 };
 
+static const struct clk_div_table pll_divq_table[] = {
+	{ 2, 2 }, { 3, 3 }, { 4, 4 }, { 5, 5 }, { 6, 6 }, { 7, 7 },
+	{ 8, 8 }, { 9, 9 }, { 10, 10 }, { 11, 11 }, { 12, 12 }, { 13, 13 },
+	{ 14, 14 }, { 15, 15 },
+	{ 0 }
+};
+
 static const struct clk_div_table pll_divr_table[] = {
 	{ 2, 2 }, { 3, 3 }, { 4, 4 }, { 5, 5 }, { 6, 6 }, { 7, 7 }, { 0 }
 };
@@ -496,9 +504,9 @@ struct stm32f4_div_data {
 
 #define MAX_PLL_DIV 3
 static const struct stm32f4_div_data  div_data[MAX_PLL_DIV] = {
-	{ 16, 2, 0,			pll_divp_table	},
-	{ 24, 4, CLK_DIVIDER_ONE_BASED, NULL		},
-	{ 28, 3, 0,			pll_divr_table	},
+	{ 16, 2, 0, pll_divp_table },
+	{ 24, 4, 0, pll_divq_table },
+	{ 28, 3, 0, pll_divr_table },
 };
 
 struct stm32f4_pll_data {
@@ -514,7 +522,7 @@ static const struct stm32f4_pll_data stm32f429_pll[MAX_PLL_DIV] = {
 };
 
 static const struct stm32f4_pll_data stm32f469_pll[MAX_PLL_DIV] = {
-	{ PLL,	   50, { "pll",	     "pll-q",    NULL	    } },
+	{ PLL,	   50, { "pll",	     "pll-q",    "pll-r"    } },
 	{ PLL_I2S, 50, { "plli2s-p", "plli2s-q", "plli2s-r" } },
 	{ PLL_SAI, 50, { "pllsai-p", "pllsai-q", "pllsai-r" } },
 };
@@ -524,19 +532,26 @@ static int stm32f4_pll_is_enabled(struct clk_hw *hw)
 	return clk_gate_ops.is_enabled(hw);
 }
 
+#define PLL_TIMEOUT 10000
+
 static int stm32f4_pll_enable(struct clk_hw *hw)
 {
 	struct clk_gate *gate = to_clk_gate(hw);
 	struct stm32f4_pll *pll = to_stm32f4_pll(gate);
-	int ret = 0;
-	unsigned long reg;
+	int bit_status;
+	unsigned int timeout = PLL_TIMEOUT;
 
-	ret = clk_gate_ops.enable(hw);
+	if (clk_gate_ops.is_enabled(hw))
+		return 0;
 
-	ret = readl_relaxed_poll_timeout_atomic(base + STM32F4_RCC_CR, reg,
-			reg & (1 << pll->bit_rdy_idx), 0, 10000);
+	clk_gate_ops.enable(hw);
 
-	return ret;
+	do {
+		bit_status = !(readl(gate->reg) & BIT(pll->bit_rdy_idx));
+
+	} while (bit_status && --timeout);
+
+	return bit_status;
 }
 
 static void stm32f4_pll_disable(struct clk_hw *hw)
@@ -827,24 +842,32 @@ struct stm32_rgate {
 	u8	bit_rdy_idx;
 };
 
-#define RTC_TIMEOUT 1000000
+#define RGATE_TIMEOUT 50000
 
 static int rgclk_enable(struct clk_hw *hw)
 {
 	struct clk_gate *gate = to_clk_gate(hw);
 	struct stm32_rgate *rgate = to_rgclk(gate);
-	u32 reg;
-	int ret;
+	int bit_status;
+	unsigned int timeout = RGATE_TIMEOUT;
+
+	if (clk_gate_ops.is_enabled(hw))
+		return 0;
 
 	disable_power_domain_write_protection();
 
 	clk_gate_ops.enable(hw);
 
-	ret = readl_relaxed_poll_timeout_atomic(gate->reg, reg,
-			reg & rgate->bit_rdy_idx, 1000, RTC_TIMEOUT);
+	do {
+		bit_status = !(readl(gate->reg) & BIT(rgate->bit_rdy_idx));
+		if (bit_status)
+			udelay(100);
+
+	} while (bit_status && --timeout);
 
 	enable_power_domain_write_protection();
-	return ret;
+
+	return bit_status;
 }
 
 static void rgclk_disable(struct clk_hw *hw)
@@ -1025,6 +1048,8 @@ static const char *rtc_parents[4] = {
 	"no-clock", "lse", "lsi", "hse-rtc"
 };
 
+static const char *dsi_parent[2] = { NULL, "pll-r" };
+
 static const char *lcd_parent[1] = { "pllsai-r-div" };
 
 static const char *i2s_parents[2] = { "plli2s-r", NULL };
@@ -1133,6 +1158,12 @@ static const struct stm32_aux_clk stm32f469_aux_clk[] = {
 		STM32F4_RCC_DCKCFGR, 28, 1,
 		NO_GATE, 0,
 		0
+	},
+	{
+		CLK_F469_DSI, "dsi", dsi_parent, ARRAY_SIZE(dsi_parent),
+		STM32F4_RCC_DCKCFGR, 29, 1,
+		STM32F4_RCC_APB2ENR, 27,
+		CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT
 	},
 };
 
@@ -1402,7 +1433,7 @@ static void __init stm32f4_rcc_init(struct device_node *np)
 
 	base = of_iomap(np, 0);
 	if (!base) {
-		pr_err("%s: unable to map resource", np->name);
+		pr_err("%pOFn: unable to map resource\n", np);
 		return;
 	}
 
@@ -1428,6 +1459,7 @@ static void __init stm32f4_rcc_init(struct device_node *np)
 	stm32f4_gate_map = data->gates_map;
 
 	hse_clk = of_clk_get_parent_name(np, 0);
+	dsi_parent[0] = hse_clk;
 
 	i2s_in_clk = of_clk_get_parent_name(np, 1);
 
@@ -1519,14 +1551,14 @@ static void __init stm32f4_rcc_init(struct device_node *np)
 		    base + gd->offset, gd->bit_idx, 0, &stm32f4_clk_lock);
 
 		if (IS_ERR(clks[idx])) {
-			pr_err("%s: Unable to register leaf clock %s\n",
-			       np->full_name, gd->name);
+			pr_err("%pOF: Unable to register leaf clock %s\n",
+			       np, gd->name);
 			goto fail;
 		}
 	}
 
 	clks[CLK_LSI] = clk_register_rgate(NULL, "lsi", "clk-lsi", 0,
-			base + STM32F4_RCC_CSR, 0, 2, 0, &stm32f4_clk_lock);
+			base + STM32F4_RCC_CSR, 0, 1, 0, &stm32f4_clk_lock);
 
 	if (IS_ERR(clks[CLK_LSI])) {
 		pr_err("Unable to register lsi clock\n");
@@ -1534,7 +1566,7 @@ static void __init stm32f4_rcc_init(struct device_node *np)
 	}
 
 	clks[CLK_LSE] = clk_register_rgate(NULL, "lse", "clk-lse", 0,
-			base + STM32F4_RCC_BDCR, 0, 2, 0, &stm32f4_clk_lock);
+			base + STM32F4_RCC_BDCR, 0, 1, 0, &stm32f4_clk_lock);
 
 	if (IS_ERR(clks[CLK_LSE])) {
 		pr_err("Unable to register lse clock\n");

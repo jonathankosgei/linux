@@ -33,7 +33,8 @@
 #define PFUZE100_VGEN4		12
 #define PFUZE100_VGEN5		13
 #define PFUZE100_VGEN6		14
-#define PFUZE100_MAX_REGULATOR	15
+#define PFUZE100_COIN		15
+#define PFUZE100_MAX_REGULATOR	16
 
 #define PFUZE200_SW1AB		0
 #define PFUZE200_SW2		1
@@ -48,6 +49,7 @@
 #define PFUZE200_VGEN4		10
 #define PFUZE200_VGEN5		11
 #define PFUZE200_VGEN6		12
+#define PFUZE200_COIN		13
 
 #define PFUZE3000_SW1A		0
 #define PFUZE3000_SW1B		1
@@ -62,6 +64,17 @@
 #define PFUZE3000_V33		10
 #define PFUZE3000_VLDO3		11
 #define PFUZE3000_VLDO4		12
+
+#define PFUZE3001_SW1		0
+#define PFUZE3001_SW2		1
+#define PFUZE3001_SW3		2
+#define PFUZE3001_VSNVS		3
+#define PFUZE3001_VLDO1		4
+#define PFUZE3001_VLDO2		5
+#define PFUZE3001_VCCSD		6
+#define PFUZE3001_V33		7
+#define PFUZE3001_VLDO3		8
+#define PFUZE3001_VLDO4		9
 
 struct regulator_init_data;
 

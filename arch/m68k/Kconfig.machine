@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
 comment "Machine Types"
 
 if M68KCLASSIC
@@ -265,6 +266,12 @@ config AMCORE
 	help
 	  Support for the Sysam AMCORE open-hardware generic board.
 
+config STMARK2
+        bool "Sysam stmark2 board support"
+        depends on M5441x
+        help
+          Support for the Sysam stmark2 open-hardware generic board.
+
 config FIREBEE
 	bool "FireBee board support"
 	depends on M547x
@@ -310,7 +317,6 @@ config UBOOT
 	help
 	  If you say Y here kernel will try to collect command
 	  line parameters from the initial u-boot stack.
-	default n
 
 config 4KSTACKS
 	bool "Use 4Kb for kernel stacks instead of 8Kb"
@@ -388,7 +394,6 @@ comment "ROM configuration"
 
 config ROM
 	bool "Specify ROM linker regions"
-	default n
 	help
 	  Define a ROM region for the linker script. This creates a kernel
 	  that can be stored in flash, with possibly the text, and data

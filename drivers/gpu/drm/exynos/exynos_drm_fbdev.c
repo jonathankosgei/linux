@@ -18,10 +18,11 @@
 #include <drm/drm_crtc_helper.h>
 #include <drm/exynos_drm.h>
 
+#include <linux/console.h>
+
 #include "exynos_drm_drv.h"
 #include "exynos_drm_fb.h"
 #include "exynos_drm_fbdev.h"
-#include "exynos_drm_iommu.h"
 
 #define MAX_CONNECTOR		4
 #define PREFERRED_BPP		32
@@ -99,7 +100,6 @@ static int exynos_drm_fbdev_update(struct drm_fb_helper *helper,
 				VM_MAP, pgprot_writecombine(PAGE_KERNEL));
 	if (!exynos_gem->kvaddr) {
 		DRM_ERROR("failed to map pages to kernel space.\n");
-		drm_fb_helper_release_fbi(helper);
 		return -EIO;
 	}
 
@@ -120,7 +120,6 @@ static int exynos_drm_fbdev_create(struct drm_fb_helper *helper,
 	struct exynos_drm_gem *exynos_gem;
 	struct drm_device *dev = helper->dev;
 	struct drm_mode_fb_cmd2 mode_cmd = { 0 };
-	struct platform_device *pdev = dev->platformdev;
 	unsigned long size;
 	int ret;
 
@@ -143,7 +142,7 @@ static int exynos_drm_fbdev_create(struct drm_fb_helper *helper,
 	 * memory area.
 	 */
 	if (IS_ERR(exynos_gem) && is_drm_iommu_supported(dev)) {
-		dev_warn(&pdev->dev, "contiguous FB allocation failed, falling back to non-contiguous\n");
+		dev_warn(dev->dev, "contiguous FB allocation failed, falling back to non-contiguous\n");
 		exynos_gem = exynos_drm_gem_create(dev, EXYNOS_BO_NONCONTIG,
 						   size);
 	}
@@ -185,24 +184,6 @@ static const struct drm_fb_helper_funcs exynos_drm_fb_helper_funcs = {
 	.fb_probe =	exynos_drm_fbdev_create,
 };
 
-static bool exynos_drm_fbdev_is_anything_connected(struct drm_device *dev)
-{
-	struct drm_connector *connector;
-	bool ret = false;
-
-	mutex_lock(&dev->mode_config.mutex);
-	list_for_each_entry(connector, &dev->mode_config.connector_list, head) {
-		if (connector->status != connector_status_connected)
-			continue;
-
-		ret = true;
-		break;
-	}
-	mutex_unlock(&dev->mode_config.mutex);
-
-	return ret;
-}
-
 int exynos_drm_fbdev_init(struct drm_device *dev)
 {
 	struct exynos_drm_fbdev *fbdev;
@@ -210,10 +191,7 @@ int exynos_drm_fbdev_init(struct drm_device *dev)
 	struct drm_fb_helper *helper;
 	int ret;
 
-	if (!dev->mode_config.num_crtc || !dev->mode_config.num_connector)
-		return 0;
-
-	if (!exynos_drm_fbdev_is_anything_connected(dev))
+	if (!dev->mode_config.num_crtc)
 		return 0;
 
 	fbdev = kzalloc(sizeof(*fbdev), GFP_KERNEL);
@@ -272,7 +250,6 @@ static void exynos_drm_fbdev_destroy(struct drm_device *dev,
 	}
 
 	drm_fb_helper_unregister_fbi(fb_helper);
-	drm_fb_helper_release_fbi(fb_helper);
 
 	drm_fb_helper_fini(fb_helper);
 }
@@ -292,23 +269,3 @@ void exynos_drm_fbdev_fini(struct drm_device *dev)
 	private->fb_helper = NULL;
 }
 
-void exynos_drm_fbdev_restore_mode(struct drm_device *dev)
-{
-	struct exynos_drm_private *private = dev->dev_private;
-
-	if (!private || !private->fb_helper)
-		return;
-
-	drm_fb_helper_restore_fbdev_mode_unlocked(private->fb_helper);
-}
-
-void exynos_drm_output_poll_changed(struct drm_device *dev)
-{
-	struct exynos_drm_private *private = dev->dev_private;
-	struct drm_fb_helper *fb_helper = private->fb_helper;
-
-	if (fb_helper)
-		drm_fb_helper_hotplug_event(fb_helper);
-	else
-		exynos_drm_fbdev_init(dev);
-}

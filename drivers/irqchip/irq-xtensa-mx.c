@@ -32,6 +32,7 @@ static int xtensa_mx_irq_map(struct irq_domain *d, unsigned int irq,
 		irq_set_status_flags(irq, IRQ_LEVEL);
 		return 0;
 	}
+	irqd_set_single_target(irq_desc_get_irq_data(irq_to_desc(irq)));
 	return xtensa_irq_map(d, irq, hw);
 }
 
@@ -61,7 +62,7 @@ void secondary_init_irq(void)
 	__this_cpu_write(cached_irq_mask,
 			XCHAL_INTTYPE_MASK_EXTERN_EDGE |
 			XCHAL_INTTYPE_MASK_EXTERN_LEVEL);
-	set_sr(XCHAL_INTTYPE_MASK_EXTERN_EDGE |
+	xtensa_set_sr(XCHAL_INTTYPE_MASK_EXTERN_EDGE |
 			XCHAL_INTTYPE_MASK_EXTERN_LEVEL, intenable);
 }
 
@@ -76,7 +77,7 @@ static void xtensa_mx_irq_mask(struct irq_data *d)
 	} else {
 		mask = __this_cpu_read(cached_irq_mask) & ~mask;
 		__this_cpu_write(cached_irq_mask, mask);
-		set_sr(mask, intenable);
+		xtensa_set_sr(mask, intenable);
 	}
 }
 
@@ -91,39 +92,40 @@ static void xtensa_mx_irq_unmask(struct irq_data *d)
 	} else {
 		mask |= __this_cpu_read(cached_irq_mask);
 		__this_cpu_write(cached_irq_mask, mask);
-		set_sr(mask, intenable);
+		xtensa_set_sr(mask, intenable);
 	}
 }
 
 static void xtensa_mx_irq_enable(struct irq_data *d)
 {
-	variant_irq_enable(d->hwirq);
 	xtensa_mx_irq_unmask(d);
 }
 
 static void xtensa_mx_irq_disable(struct irq_data *d)
 {
 	xtensa_mx_irq_mask(d);
-	variant_irq_disable(d->hwirq);
 }
 
 static void xtensa_mx_irq_ack(struct irq_data *d)
 {
-	set_sr(1 << d->hwirq, intclear);
+	xtensa_set_sr(1 << d->hwirq, intclear);
 }
 
 static int xtensa_mx_irq_retrigger(struct irq_data *d)
 {
-	set_sr(1 << d->hwirq, intset);
+	xtensa_set_sr(1 << d->hwirq, intset);
 	return 1;
 }
 
 static int xtensa_mx_irq_set_affinity(struct irq_data *d,
 		const struct cpumask *dest, bool force)
 {
-	unsigned mask = 1u << cpumask_any_and(dest, cpu_online_mask);
+	int cpu = cpumask_any_and(dest, cpu_online_mask);
+	unsigned mask = 1u << cpu;
 
 	set_er(mask, MIROUT(d->hwirq - HW_IRQ_MX_BASE));
+	irq_data_update_effective_affinity(d, cpumask_of(cpu));
+
 	return 0;
 
 }
@@ -142,7 +144,7 @@ static struct irq_chip xtensa_mx_irq_chip = {
 int __init xtensa_mx_init_legacy(struct device_node *interrupt_parent)
 {
 	struct irq_domain *root_domain =
-		irq_domain_add_legacy(NULL, NR_IRQS, 0, 0,
+		irq_domain_add_legacy(NULL, NR_IRQS - 1, 1, 0,
 				&xtensa_mx_irq_domain_ops,
 				&xtensa_mx_irq_chip);
 	irq_set_default_host(root_domain);

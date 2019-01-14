@@ -97,7 +97,7 @@ static int __lz4_decompress_crypto(const u8 *src, unsigned int slen,
 	int out_len = LZ4_decompress_safe(src, dst, slen, *dlen);
 
 	if (out_len < 0)
-		return out_len;
+		return -EINVAL;
 
 	*dlen = out_len;
 	return 0;
@@ -122,7 +122,6 @@ static struct crypto_alg alg_lz4 = {
 	.cra_flags		= CRYPTO_ALG_TYPE_COMPRESS,
 	.cra_ctxsize		= sizeof(struct lz4_ctx),
 	.cra_module		= THIS_MODULE,
-	.cra_list		= LIST_HEAD_INIT(alg_lz4.cra_list),
 	.cra_init		= lz4_init,
 	.cra_exit		= lz4_exit,
 	.cra_u			= { .compress = {

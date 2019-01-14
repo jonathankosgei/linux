@@ -1,7 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /*
  * Copyright (C) 2016 Rafał Miłecki <rafal@milecki.pl>
- *
- * Licensed under the ISC license.
  */
 
 #include <dt-bindings/gpio/gpio.h>
@@ -13,8 +12,12 @@
 / {
 	interrupt-parent = <&gic>;
 
+	aliases {
+		serial0 = &uart0;
+	};
+
 	chosen {
-		stdout-path = &uart0;
+		stdout-path = "serial0:115200n8";
 	};
 
 	cpus {
@@ -42,6 +45,14 @@
 			reg = <0x1000 0x1000>,
 			      <0x2000 0x0100>;
 		};
+	};
+
+	timer {
+		compatible = "arm,armv7-timer";
+		interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_LOW>,
+			     <GIC_PPI 14 IRQ_TYPE_LEVEL_LOW>,
+			     <GIC_PPI 11 IRQ_TYPE_LEVEL_LOW>,
+			     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
 	};
 
 	clocks {
@@ -103,7 +114,7 @@
 			gpio-controller;
 			#gpio-cells = <2>;
 
-			uart0: serial@0300 {
+			uart0: serial@300 {
 				compatible = "ns16550a";
 				reg = <0x0300 0x100>;
 				interrupt-parent = <&gic>;
@@ -111,6 +122,10 @@
 				clocks = <&alp>;
 				status = "okay";
 			};
+		};
+
+		pcie0: pcie@2000 {
+			reg = <0x00002000 0x1000>;
 		};
 
 		usb2: usb2@4000 {
@@ -130,10 +145,12 @@
 
 				ehci_port1: port@1 {
 					reg = <1>;
+					#trigger-source-cells = <0>;
 				};
 
 				ehci_port2: port@2 {
 					reg = <2>;
+					#trigger-source-cells = <0>;
 				};
 			};
 
@@ -150,10 +167,12 @@
 
 				ohci_port1: port@1 {
 					reg = <1>;
+					#trigger-source-cells = <0>;
 				};
 
 				ohci_port2: port@2 {
 					reg = <2>;
+					#trigger-source-cells = <0>;
 				};
 			};
 		};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 /*
  * builtin-diff.c
  *
@@ -19,6 +20,8 @@
 #include "util/data.h"
 #include "util/config.h"
 
+#include <errno.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <math.h>
 
@@ -45,7 +48,7 @@ struct diff_hpp_fmt {
 
 struct data__file {
 	struct perf_session	*session;
-	struct perf_data_file	file;
+	struct perf_data	 data;
 	int			 idx;
 	struct hists		*hists;
 	struct diff_hpp_fmt	 fmt[PERF_HPP_DIFF__MAX_INDEX];
@@ -364,6 +367,7 @@ static struct perf_tool tool = {
 	.exit	= perf_event__process_exit,
 	.fork	= perf_event__process_fork,
 	.lost	= perf_event__process_lost,
+	.namespaces = perf_event__process_namespaces,
 	.ordered_events = true,
 	.ordering_requires_timestamps = true,
 };
@@ -692,7 +696,7 @@ static void hists__process(struct hists *hists)
 	hists__output_resort(hists, NULL);
 
 	hists__fprintf(hists, !quiet, 0, 0, 0, stdout,
-		       symbol_conf.use_callchain);
+		       !symbol_conf.use_callchain);
 }
 
 static void data__fprintf(void)
@@ -704,7 +708,7 @@ static void data__fprintf(void)
 
 	data__for_each_file(i, d)
 		fprintf(stdout, "#  [%d] %s %s\n",
-			d->idx, d->file.path,
+			d->idx, d->data.file.path,
 			!d->idx ? "(Baseline)" : "");
 
 	fprintf(stdout, "#\n");
@@ -773,16 +777,16 @@ static int __cmd_diff(void)
 	int ret = -EINVAL, i;
 
 	data__for_each_file(i, d) {
-		d->session = perf_session__new(&d->file, false, &tool);
+		d->session = perf_session__new(&d->data, false, &tool);
 		if (!d->session) {
-			pr_err("Failed to open %s\n", d->file.path);
+			pr_err("Failed to open %s\n", d->data.file.path);
 			ret = -1;
 			goto out_delete;
 		}
 
 		ret = perf_session__process_events(d->session);
 		if (ret) {
-			pr_err("Failed to process %s\n", d->file.path);
+			pr_err("Failed to process %s\n", d->data.file.path);
 			goto out_delete;
 		}
 
@@ -1283,11 +1287,11 @@ static int data_init(int argc, const char **argv)
 		return -ENOMEM;
 
 	data__for_each_file(i, d) {
-		struct perf_data_file *file = &d->file;
+		struct perf_data *data = &d->data;
 
-		file->path  = use_default ? defaults[i] : argv[i];
-		file->mode  = PERF_DATA_MODE_READ,
-		file->force = force,
+		data->file.path = use_default ? defaults[i] : argv[i];
+		data->mode      = PERF_DATA_MODE_READ,
+		data->force     = force,
 
 		d->idx  = i;
 	}
@@ -1299,7 +1303,10 @@ static int diff__config(const char *var, const char *value,
 			void *cb __maybe_unused)
 {
 	if (!strcmp(var, "diff.order")) {
-		sort_compute = perf_config_int(var, value);
+		int ret;
+		if (perf_config_int(&ret, var, value) < 0)
+			return -1;
+		sort_compute = ret;
 		return 0;
 	}
 	if (!strcmp(var, "diff.compute")) {
@@ -1320,7 +1327,7 @@ static int diff__config(const char *var, const char *value,
 	return 0;
 }
 
-int cmd_diff(int argc, const char **argv, const char *prefix __maybe_unused)
+int cmd_diff(int argc, const char **argv)
 {
 	int ret = hists__init();
 

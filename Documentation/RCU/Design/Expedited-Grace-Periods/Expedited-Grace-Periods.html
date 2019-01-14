@@ -12,10 +12,9 @@ high efficiency and minimal disturbance, expedited grace periods accept
 lower efficiency and significant disturbance to attain shorter latencies.
 
 <p>
-There are three flavors of RCU (RCU-bh, RCU-preempt, and RCU-sched),
-but only two flavors of expedited grace periods because the RCU-bh
-expedited grace period maps onto the RCU-sched expedited grace period.
-Each of the remaining two implementations is covered in its own section.
+There are two flavors of RCU (RCU-preempt and RCU-sched), with an earlier
+third RCU-bh flavor having been implemented in terms of the other two.
+Each of the two implementations is covered in its own section.
 
 <ol>
 <li>	<a href="#Expedited Grace Period Design">
@@ -158,12 +157,12 @@ whether or not the current CPU is in an RCU read-side critical section.
 The best that <tt>sync_sched_exp_handler()</tt> can do is to check
 for idle, on the off-chance that the CPU went idle while the IPI
 was in flight.
-If the CPU is idle, then tt>sync_sched_exp_handler()</tt> reports
+If the CPU is idle, then <tt>sync_sched_exp_handler()</tt> reports
 the quiescent state.
 
-<p>
-Otherwise, the handler invokes <tt>resched_cpu()</tt>, which forces
-a future context switch.
+<p> Otherwise, the handler forces a future context switch by setting the
+NEED_RESCHED flag of the current task's thread flag and the CPU preempt
+counter.
 At the time of the context switch, the CPU reports the quiescent state.
 Should the CPU go offline first, it will report the quiescent state
 at that time.
@@ -284,6 +283,7 @@ Expedited Grace Period Refinements</a></h2>
 	Funnel locking and wait/wakeup</a>.
 <li>	<a href="#Use of Workqueues">Use of Workqueues</a>.
 <li>	<a href="#Stall Warnings">Stall warnings</a>.
+<li>	<a href="#Mid-Boot Operation">Mid-boot operation</a>.
 </ol>
 
 <h3><a name="Idle-CPU Checks">Idle-CPU Checks</a></h3>
@@ -524,17 +524,17 @@ their grace periods and carrying out their wakeups.
 In earlier implementations, the task requesting the expedited
 grace period also drove it to completion.
 This straightforward approach had the disadvantage of needing to
-account for signals sent to user tasks,
+account for POSIX signals sent to user tasks,
 so more recent implemementations use the Linux kernel's
-<a href="https://www.kernel.org/doc/Documentation/workqueue.txt">workqueues</a>.
+<a href="https://www.kernel.org/doc/Documentation/core-api/workqueue.rst">workqueues</a>.
 
 <p>
 The requesting task still does counter snapshotting and funnel-lock
 processing, but the task reaching the top of the funnel lock
 does a <tt>schedule_work()</tt> (from <tt>_synchronize_rcu_expedited()</tt>
 so that a workqueue kthread does the actual grace-period processing.
-Because workqueue kthreads do not accept signals, grace-period-wait
-processing need not allow for signals.
+Because workqueue kthreads do not accept POSIX signals, grace-period-wait
+processing need not allow for POSIX signals.
 
 In addition, this approach allows wakeups for the previous expedited
 grace period to be overlapped with processing for the next expedited
@@ -585,6 +585,46 @@ If this time is exceeded, any CPUs or <tt>rcu_node</tt> structures
 blocking the current grace period are printed.
 Each stall warning results in another pass through the loop, but the
 second and subsequent passes use longer stall times.
+
+<h3><a name="Mid-Boot Operation">Mid-boot operation</a></h3>
+
+<p>
+The use of workqueues has the advantage that the expedited
+grace-period code need not worry about POSIX signals.
+Unfortunately, it has the
+corresponding disadvantage that workqueues cannot be used until
+they are initialized, which does not happen until some time after
+the scheduler spawns the first task.
+Given that there are parts of the kernel that really do want to
+execute grace periods during this mid-boot &ldquo;dead zone&rdquo;,
+expedited grace periods must do something else during thie time.
+
+<p>
+What they do is to fall back to the old practice of requiring that the
+requesting task drive the expedited grace period, as was the case
+before the use of workqueues.
+However, the requesting task is only required to drive the grace period
+during the mid-boot dead zone.
+Before mid-boot, a synchronous grace period is a no-op.
+Some time after mid-boot, workqueues are used.
+
+<p>
+Non-expedited non-SRCU synchronous grace periods must also operate
+normally during mid-boot.
+This is handled by causing non-expedited grace periods to take the
+expedited code path during mid-boot.
+
+<p>
+The current code assumes that there are no POSIX signals during
+the mid-boot dead zone.
+However, if an overwhelming need for POSIX signals somehow arises,
+appropriate adjustments can be made to the expedited stall-warning code.
+One such adjustment would reinstate the pre-workqueue stall-warning
+checks, but only during the mid-boot dead zone.
+
+<p>
+With this refinement, synchronous grace periods can now be used from
+task context pretty much any time during the life of the kernel.
 
 <h3><a name="Summary">
 Summary</a></h3>

@@ -10,6 +10,15 @@ menuconfig LOGO
 
 if LOGO
 
+config FB_LOGO_CENTER
+	bool "Center the logo"
+	depends on FB=y
+	help
+	  When this option is selected, the bootup logo is centered both
+	  horizontally and vertically. If more than one logo is displayed
+	  due to multiple CPUs, the collected line of logos is centered
+	  as a whole.
+
 config FB_LOGO_EXTRA
 	bool
 	depends on FB=y
@@ -25,16 +34,6 @@ config LOGO_LINUX_VGA16
 
 config LOGO_LINUX_CLUT224
 	bool "Standard 224-color Linux logo"
-	default y
-
-config LOGO_BLACKFIN_VGA16
-	bool "16-colour Blackfin Processor Linux logo"
-	depends on BLACKFIN
-	default y
-
-config LOGO_BLACKFIN_CLUT224
-	bool "224-colour Blackfin Processor Linux logo"
-	depends on BLACKFIN
 	default y
 
 config LOGO_DEC_CLUT224
@@ -75,11 +74,6 @@ config LOGO_SUPERH_VGA16
 config LOGO_SUPERH_CLUT224
 	bool "224-color SuperH Linux logo"
 	depends on SUPERH
-	default y
-
-config LOGO_M32R_CLUT224
-	bool "224-color M32R Linux logo"
-	depends on M32R
 	default y
 
 endif # LOGO

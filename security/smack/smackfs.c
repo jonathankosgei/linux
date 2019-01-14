@@ -2853,9 +2853,8 @@ static const struct file_operations smk_ptrace_ops = {
 static int smk_fill_super(struct super_block *sb, void *data, int silent)
 {
 	int rc;
-	struct inode *root_inode;
 
-	static struct tree_descr smack_files[] = {
+	static const struct tree_descr smack_files[] = {
 		[SMK_LOAD] = {
 			"load", &smk_load_ops, S_IRUGO|S_IWUSR},
 		[SMK_CIPSO] = {
@@ -2916,8 +2915,6 @@ static int smk_fill_super(struct super_block *sb, void *data, int silent)
 			__func__, rc);
 		return rc;
 	}
-
-	root_inode = d_inode(sb->s_root);
 
 	return 0;
 }

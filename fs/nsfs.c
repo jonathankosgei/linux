@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/mount.h>
 #include <linux/file.h>
 #include <linux/fs.h>
@@ -53,7 +54,6 @@ static void nsfs_evict(struct inode *inode)
 static void *__ns_get_path(struct path *path, struct ns_common *ns)
 {
 	struct vfsmount *mnt = nsfs_mnt;
-	struct qstr qname = { .name = "", };
 	struct dentry *dentry;
 	struct inode *inode;
 	unsigned long d;
@@ -85,12 +85,13 @@ slow:
 	inode->i_fop = &ns_file_operations;
 	inode->i_private = ns;
 
-	dentry = d_alloc_pseudo(mnt->mnt_sb, &qname);
+	dentry = d_alloc_pseudo(mnt->mnt_sb, &empty_name);
 	if (!dentry) {
 		iput(inode);
 		return ERR_PTR(-ENOMEM);
 	}
 	d_instantiate(dentry, inode);
+	dentry->d_flags |= DCACHE_RCUACCESS;
 	dentry->d_fsdata = (void *)ns->ops;
 	d = atomic_long_cmpxchg(&ns->stashed, 0, (unsigned long)dentry);
 	if (d) {
@@ -102,14 +103,14 @@ slow:
 	goto got_it;
 }
 
-void *ns_get_path(struct path *path, struct task_struct *task,
-			const struct proc_ns_operations *ns_ops)
+void *ns_get_path_cb(struct path *path, ns_get_path_helper_t *ns_get_cb,
+		     void *private_data)
 {
 	struct ns_common *ns;
 	void *ret;
 
 again:
-	ns = ns_ops->get(task);
+	ns = ns_get_cb(private_data);
 	if (!ns)
 		return ERR_PTR(-ENOENT);
 
@@ -117,6 +118,29 @@ again:
 	if (IS_ERR(ret) && PTR_ERR(ret) == -EAGAIN)
 		goto again;
 	return ret;
+}
+
+struct ns_get_path_task_args {
+	const struct proc_ns_operations *ns_ops;
+	struct task_struct *task;
+};
+
+static struct ns_common *ns_get_path_task(void *private_data)
+{
+	struct ns_get_path_task_args *args = private_data;
+
+	return args->ns_ops->get(args->task);
+}
+
+void *ns_get_path(struct path *path, struct task_struct *task,
+		  const struct proc_ns_operations *ns_ops)
+{
+	struct ns_get_path_task_args args = {
+		.ns_ops	= ns_ops,
+		.task	= task,
+	};
+
+	return ns_get_path_cb(path, ns_get_path_task, &args);
 }
 
 int open_related_ns(struct ns_common *ns,
@@ -160,6 +184,7 @@ int open_related_ns(struct ns_common *ns,
 
 	return fd;
 }
+EXPORT_SYMBOL_GPL(open_related_ns);
 
 static long ns_ioctl(struct file *filp, unsigned int ioctl,
 			unsigned long arg)
@@ -195,9 +220,11 @@ int ns_get_name(char *buf, size_t size, struct task_struct *task,
 {
 	struct ns_common *ns;
 	int res = -ENOENT;
+	const char *name;
 	ns = ns_ops->get(task);
 	if (ns) {
-		res = snprintf(buf, size, "%s:[%u]", ns_ops->name, ns->inum);
+		name = ns_ops->real_ns_name ? : ns_ops->name;
+		res = snprintf(buf, size, "%s:[%u]", name, ns->inum);
 		ns_ops->put(ns);
 	}
 	return res;
@@ -252,5 +279,5 @@ void __init nsfs_init(void)
 	nsfs_mnt = kern_mount(&nsfs);
 	if (IS_ERR(nsfs_mnt))
 		panic("can't set nsfs up\n");
-	nsfs_mnt->mnt_sb->s_flags &= ~MS_NOUSER;
+	nsfs_mnt->mnt_sb->s_flags &= ~SB_NOUSER;
 }

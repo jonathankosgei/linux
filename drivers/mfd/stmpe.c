@@ -568,6 +568,8 @@ static const u8 stmpe1600_regs[] = {
 	[STMPE_IDX_GPMR_CSB]	= STMPE1600_REG_GPMR_MSB,
 	[STMPE_IDX_GPSR_LSB]	= STMPE1600_REG_GPSR_LSB,
 	[STMPE_IDX_GPSR_CSB]	= STMPE1600_REG_GPSR_MSB,
+	[STMPE_IDX_GPCR_LSB]	= STMPE1600_REG_GPSR_LSB,
+	[STMPE_IDX_GPCR_CSB]	= STMPE1600_REG_GPSR_MSB,
 	[STMPE_IDX_GPDR_LSB]	= STMPE1600_REG_GPDR_LSB,
 	[STMPE_IDX_GPDR_CSB]	= STMPE1600_REG_GPDR_MSB,
 	[STMPE_IDX_IEGPIOR_LSB]	= STMPE1600_REG_IEGPIOR_LSB,
@@ -1300,17 +1302,17 @@ static void stmpe_of_probe(struct stmpe_platform_data *pdata,
 	pdata->autosleep = (pdata->autosleep_timeout) ? true : false;
 
 	for_each_child_of_node(np, child) {
-		if (!strcmp(child->name, "stmpe_gpio")) {
+		if (of_node_name_eq(child, "stmpe_gpio")) {
 			pdata->blocks |= STMPE_BLOCK_GPIO;
-		} else if (!strcmp(child->name, "stmpe_keypad")) {
+		} else if (of_node_name_eq(child, "stmpe_keypad")) {
 			pdata->blocks |= STMPE_BLOCK_KEYPAD;
-		} else if (!strcmp(child->name, "stmpe_touchscreen")) {
+		} else if (of_node_name_eq(child, "stmpe_touchscreen")) {
 			pdata->blocks |= STMPE_BLOCK_TOUCHSCREEN;
-		} else if (!strcmp(child->name, "stmpe_adc")) {
+		} else if (of_node_name_eq(child, "stmpe_adc")) {
 			pdata->blocks |= STMPE_BLOCK_ADC;
-		} else if (!strcmp(child->name, "stmpe_pwm")) {
+		} else if (of_node_name_eq(child, "stmpe_pwm")) {
 			pdata->blocks |= STMPE_BLOCK_PWM;
-		} else if (!strcmp(child->name, "stmpe_rotator")) {
+		} else if (of_node_name_eq(child, "stmpe_rotator")) {
 			pdata->blocks |= STMPE_BLOCK_ROTATOR;
 		}
 	}

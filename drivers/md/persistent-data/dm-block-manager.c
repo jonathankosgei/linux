@@ -5,8 +5,8 @@
  */
 #include "dm-block-manager.h"
 #include "dm-persistent-data-internal.h"
-#include "../dm-bufio.h"
 
+#include <linux/dm-bufio.h>
 #include <linux/crc32c.h>
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -378,7 +378,6 @@ struct dm_block_manager {
 
 struct dm_block_manager *dm_block_manager_create(struct block_device *bdev,
 						 unsigned block_size,
-						 unsigned cache_size,
 						 unsigned max_held_per_thread)
 {
 	int r;

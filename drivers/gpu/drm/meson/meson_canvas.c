@@ -24,7 +24,9 @@
 #include "meson_canvas.h"
 #include "meson_registers.h"
 
-/*
+/**
+ * DOC: Canvas
+ *
  * CANVAS is a memory zone where physical memory frames information
  * are stored for the VIU to scanout.
  */
@@ -37,6 +39,7 @@
 #define CANVAS_WIDTH_HBIT       0
 #define CANVAS_HEIGHT_BIT       9
 #define CANVAS_BLKMODE_BIT      24
+#define CANVAS_ENDIAN_BIT	26
 #define DMC_CAV_LUT_ADDR	0x50 /* 0x14 offset in data sheet */
 #define CANVAS_LUT_WR_EN        (0x2 << 8)
 #define CANVAS_LUT_RD_EN        (0x1 << 8)
@@ -45,7 +48,8 @@ void meson_canvas_setup(struct meson_drm *priv,
 			uint32_t canvas_index, uint32_t addr,
 			uint32_t stride, uint32_t height,
 			unsigned int wrap,
-			unsigned int blkmode)
+			unsigned int blkmode,
+			unsigned int endian)
 {
 	unsigned int val;
 
@@ -58,7 +62,8 @@ void meson_canvas_setup(struct meson_drm *priv,
 						CANVAS_WIDTH_HBIT) |
 		(height << CANVAS_HEIGHT_BIT) |
 		(wrap << 22) |
-		(blkmode << CANVAS_BLKMODE_BIT));
+		(blkmode << CANVAS_BLKMODE_BIT) |
+		(endian << CANVAS_ENDIAN_BIT));
 
 	regmap_write(priv->dmc, DMC_CAV_LUT_ADDR,
 			CANVAS_LUT_WR_EN | canvas_index);

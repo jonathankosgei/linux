@@ -578,10 +578,14 @@ static int ssd1307fb_probe(struct i2c_client *client,
 
 	par->vbat_reg = devm_regulator_get_optional(&client->dev, "vbat");
 	if (IS_ERR(par->vbat_reg)) {
-		dev_err(&client->dev, "failed to get VBAT regulator: %ld\n",
-			PTR_ERR(par->vbat_reg));
 		ret = PTR_ERR(par->vbat_reg);
-		goto fb_alloc_error;
+		if (ret == -ENODEV) {
+			par->vbat_reg = NULL;
+		} else {
+			dev_err(&client->dev, "failed to get VBAT regulator: %d\n",
+				ret);
+			goto fb_alloc_error;
+		}
 	}
 
 	if (of_property_read_u32(node, "solomon,width", &par->width))
@@ -624,7 +628,8 @@ static int ssd1307fb_probe(struct i2c_client *client,
 		goto fb_alloc_error;
 	}
 
-	ssd1307fb_defio = devm_kzalloc(&client->dev, sizeof(struct fb_deferred_io), GFP_KERNEL);
+	ssd1307fb_defio = devm_kzalloc(&client->dev, sizeof(*ssd1307fb_defio),
+				       GFP_KERNEL);
 	if (!ssd1307fb_defio) {
 		dev_err(&client->dev, "Couldn't allocate deferred io.\n");
 		ret = -ENOMEM;
@@ -662,16 +667,19 @@ static int ssd1307fb_probe(struct i2c_client *client,
 
 	if (par->reset) {
 		/* Reset the screen */
-		gpiod_set_value(par->reset, 0);
+		gpiod_set_value_cansleep(par->reset, 0);
 		udelay(4);
-		gpiod_set_value(par->reset, 1);
+		gpiod_set_value_cansleep(par->reset, 1);
 		udelay(4);
 	}
 
-	ret = regulator_enable(par->vbat_reg);
-	if (ret) {
-		dev_err(&client->dev, "failed to enable VBAT: %d\n", ret);
-		goto reset_oled_error;
+	if (par->vbat_reg) {
+		ret = regulator_enable(par->vbat_reg);
+		if (ret) {
+			dev_err(&client->dev, "failed to enable VBAT: %d\n",
+				ret);
+			goto reset_oled_error;
+		}
 	}
 
 	ret = ssd1307fb_init(par);
@@ -710,7 +718,8 @@ panel_init_error:
 		pwm_put(par->pwm);
 	};
 regulator_enable_error:
-	regulator_disable(par->vbat_reg);
+	if (par->vbat_reg)
+		regulator_disable(par->vbat_reg);
 reset_oled_error:
 	fb_deferred_io_cleanup(info);
 fb_alloc_error:

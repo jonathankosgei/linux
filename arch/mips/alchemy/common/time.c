@@ -81,7 +81,7 @@ static struct clock_event_device au1x_rtcmatch2_clockdev = {
 	.features	= CLOCK_EVT_FEAT_ONESHOT,
 	.rating		= 1500,
 	.set_next_event = au1x_rtcmatch2_set_next_event,
-	.cpumask	= cpu_all_mask,
+	.cpumask	= cpu_possible_mask,
 };
 
 static struct irqaction au1x_rtcmatch2_irqaction = {
@@ -138,7 +138,9 @@ static int __init alchemy_time_init(unsigned int m2int)
 	cd->shift = 32;
 	cd->mult = div_sc(32768, NSEC_PER_SEC, cd->shift);
 	cd->max_delta_ns = clockevent_delta2ns(0xffffffff, cd);
-	cd->min_delta_ns = clockevent_delta2ns(9, cd);	/* ~0.28ms */
+	cd->max_delta_ticks = 0xffffffff;
+	cd->min_delta_ns = clockevent_delta2ns(9, cd);
+	cd->min_delta_ticks = 9;	/* ~0.28ms */
 	clockevents_register_device(cd);
 	setup_irq(m2int, &au1x_rtcmatch2_irqaction);
 

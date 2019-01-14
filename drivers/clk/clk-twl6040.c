@@ -82,7 +82,7 @@ static const struct clk_ops twl6040_pdmclk_ops = {
 	.recalc_rate = twl6040_pdmclk_recalc_rate,
 };
 
-static struct clk_init_data twl6040_pdmclk_init = {
+static const struct clk_init_data twl6040_pdmclk_init = {
 	.name = "pdmclk",
 	.ops = &twl6040_pdmclk_ops,
 	.flags = CLK_GET_RATE_NOCACHE,
@@ -108,9 +108,8 @@ static int twl6040_pdmclk_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, clkdata);
 
-	return of_clk_add_hw_provider(pdev->dev.parent->of_node,
-				      of_clk_hw_simple_get,
-				      &clkdata->pdmclk_hw);
+	return devm_of_clk_add_hw_provider(&pdev->dev, of_clk_hw_simple_get,
+					   &clkdata->pdmclk_hw);
 }
 
 static struct platform_driver twl6040_pdmclk_driver = {

@@ -15,6 +15,18 @@
 
 static void blk_mq_sysfs_release(struct kobject *kobj)
 {
+	struct blk_mq_ctxs *ctxs = container_of(kobj, struct blk_mq_ctxs, kobj);
+
+	free_percpu(ctxs->queue_ctx);
+	kfree(ctxs);
+}
+
+static void blk_mq_ctx_sysfs_release(struct kobject *kobj)
+{
+	struct blk_mq_ctx *ctx = container_of(kobj, struct blk_mq_ctx, kobj);
+
+	/* ctx->ctxs won't be released until all ctx are freed */
+	kobject_put(&ctx->ctxs->kobj);
 }
 
 static void blk_mq_hw_sysfs_release(struct kobject *kobj)
@@ -166,15 +178,15 @@ static struct attribute *default_ctx_attrs[] = {
 };
 
 static struct blk_mq_hw_ctx_sysfs_entry blk_mq_hw_sysfs_nr_tags = {
-	.attr = {.name = "nr_tags", .mode = S_IRUGO },
+	.attr = {.name = "nr_tags", .mode = 0444 },
 	.show = blk_mq_hw_sysfs_nr_tags_show,
 };
 static struct blk_mq_hw_ctx_sysfs_entry blk_mq_hw_sysfs_nr_reserved_tags = {
-	.attr = {.name = "nr_reserved_tags", .mode = S_IRUGO },
+	.attr = {.name = "nr_reserved_tags", .mode = 0444 },
 	.show = blk_mq_hw_sysfs_nr_reserved_tags_show,
 };
 static struct blk_mq_hw_ctx_sysfs_entry blk_mq_hw_sysfs_cpus = {
-	.attr = {.name = "cpu_list", .mode = S_IRUGO },
+	.attr = {.name = "cpu_list", .mode = 0444 },
 	.show = blk_mq_hw_sysfs_cpus_show,
 };
 
@@ -203,7 +215,7 @@ static struct kobj_type blk_mq_ktype = {
 static struct kobj_type blk_mq_ctx_ktype = {
 	.sysfs_ops	= &blk_mq_sysfs_ops,
 	.default_attrs	= default_ctx_attrs,
-	.release	= blk_mq_sysfs_release,
+	.release	= blk_mq_ctx_sysfs_release,
 };
 
 static struct kobj_type blk_mq_hw_ktype = {
@@ -235,7 +247,7 @@ static int blk_mq_register_hctx(struct blk_mq_hw_ctx *hctx)
 	if (!hctx->nr_ctx)
 		return 0;
 
-	ret = kobject_add(&hctx->kobj, &q->mq_kobj, "%u", hctx->queue_num);
+	ret = kobject_add(&hctx->kobj, q->mq_kobj, "%u", hctx->queue_num);
 	if (ret)
 		return ret;
 
@@ -248,28 +260,21 @@ static int blk_mq_register_hctx(struct blk_mq_hw_ctx *hctx)
 	return ret;
 }
 
-static void __blk_mq_unregister_dev(struct device *dev, struct request_queue *q)
+void blk_mq_unregister_dev(struct device *dev, struct request_queue *q)
 {
 	struct blk_mq_hw_ctx *hctx;
 	int i;
 
+	lockdep_assert_held(&q->sysfs_lock);
+
 	queue_for_each_hw_ctx(q, hctx, i)
 		blk_mq_unregister_hctx(hctx);
 
-	blk_mq_debugfs_unregister_hctxs(q);
-
-	kobject_uevent(&q->mq_kobj, KOBJ_REMOVE);
-	kobject_del(&q->mq_kobj);
+	kobject_uevent(q->mq_kobj, KOBJ_REMOVE);
+	kobject_del(q->mq_kobj);
 	kobject_put(&dev->kobj);
 
 	q->mq_sysfs_init_done = false;
-}
-
-void blk_mq_unregister_dev(struct device *dev, struct request_queue *q)
-{
-	blk_mq_disable_hotplug();
-	__blk_mq_unregister_dev(dev, q);
-	blk_mq_enable_hotplug();
 }
 
 void blk_mq_hctx_kobj_init(struct blk_mq_hw_ctx *hctx)
@@ -286,7 +291,7 @@ void blk_mq_sysfs_deinit(struct request_queue *q)
 		ctx = per_cpu_ptr(q->queue_ctx, cpu);
 		kobject_put(&ctx->kobj);
 	}
-	kobject_put(&q->mq_kobj);
+	kobject_put(q->mq_kobj);
 }
 
 void blk_mq_sysfs_init(struct request_queue *q)
@@ -294,58 +299,76 @@ void blk_mq_sysfs_init(struct request_queue *q)
 	struct blk_mq_ctx *ctx;
 	int cpu;
 
-	kobject_init(&q->mq_kobj, &blk_mq_ktype);
+	kobject_init(q->mq_kobj, &blk_mq_ktype);
 
 	for_each_possible_cpu(cpu) {
 		ctx = per_cpu_ptr(q->queue_ctx, cpu);
+
+		kobject_get(q->mq_kobj);
 		kobject_init(&ctx->kobj, &blk_mq_ctx_ktype);
 	}
 }
 
-int blk_mq_register_dev(struct device *dev, struct request_queue *q)
+int __blk_mq_register_dev(struct device *dev, struct request_queue *q)
 {
 	struct blk_mq_hw_ctx *hctx;
 	int ret, i;
 
-	blk_mq_disable_hotplug();
+	WARN_ON_ONCE(!q->kobj.parent);
+	lockdep_assert_held(&q->sysfs_lock);
 
-	ret = kobject_add(&q->mq_kobj, kobject_get(&dev->kobj), "%s", "mq");
+	ret = kobject_add(q->mq_kobj, kobject_get(&dev->kobj), "%s", "mq");
 	if (ret < 0)
 		goto out;
 
-	kobject_uevent(&q->mq_kobj, KOBJ_ADD);
-
-	blk_mq_debugfs_register(q, kobject_name(&dev->kobj));
+	kobject_uevent(q->mq_kobj, KOBJ_ADD);
 
 	queue_for_each_hw_ctx(q, hctx, i) {
 		ret = blk_mq_register_hctx(hctx);
 		if (ret)
-			break;
+			goto unreg;
 	}
 
-	if (ret)
-		__blk_mq_unregister_dev(dev, q);
-	else
-		q->mq_sysfs_init_done = true;
+	q->mq_sysfs_init_done = true;
+
 out:
-	blk_mq_enable_hotplug();
+	return ret;
+
+unreg:
+	while (--i >= 0)
+		blk_mq_unregister_hctx(q->queue_hw_ctx[i]);
+
+	kobject_uevent(q->mq_kobj, KOBJ_REMOVE);
+	kobject_del(q->mq_kobj);
+	kobject_put(&dev->kobj);
+	return ret;
+}
+
+int blk_mq_register_dev(struct device *dev, struct request_queue *q)
+{
+	int ret;
+
+	mutex_lock(&q->sysfs_lock);
+	ret = __blk_mq_register_dev(dev, q);
+	mutex_unlock(&q->sysfs_lock);
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(blk_mq_register_dev);
 
 void blk_mq_sysfs_unregister(struct request_queue *q)
 {
 	struct blk_mq_hw_ctx *hctx;
 	int i;
 
+	mutex_lock(&q->sysfs_lock);
 	if (!q->mq_sysfs_init_done)
-		return;
-
-	blk_mq_debugfs_unregister_hctxs(q);
+		goto unlock;
 
 	queue_for_each_hw_ctx(q, hctx, i)
 		blk_mq_unregister_hctx(hctx);
+
+unlock:
+	mutex_unlock(&q->sysfs_lock);
 }
 
 int blk_mq_sysfs_register(struct request_queue *q)
@@ -353,16 +376,18 @@ int blk_mq_sysfs_register(struct request_queue *q)
 	struct blk_mq_hw_ctx *hctx;
 	int i, ret = 0;
 
+	mutex_lock(&q->sysfs_lock);
 	if (!q->mq_sysfs_init_done)
-		return ret;
-
-	blk_mq_debugfs_register_hctxs(q);
+		goto unlock;
 
 	queue_for_each_hw_ctx(q, hctx, i) {
 		ret = blk_mq_register_hctx(hctx);
 		if (ret)
 			break;
 	}
+
+unlock:
+	mutex_unlock(&q->sysfs_lock);
 
 	return ret;
 }

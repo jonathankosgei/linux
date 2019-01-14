@@ -99,24 +99,14 @@ int dss_set_min_bus_tput(struct device *dev, unsigned long tput)
 }
 
 #if defined(CONFIG_FB_OMAP2_DSS_DEBUGFS)
-static int dss_debug_show(struct seq_file *s, void *unused)
+static int dss_show(struct seq_file *s, void *unused)
 {
 	void (*func)(struct seq_file *) = s->private;
 	func(s);
 	return 0;
 }
 
-static int dss_debug_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, dss_debug_show, inode->i_private);
-}
-
-static const struct file_operations dss_debug_fops = {
-	.open           = dss_debug_open,
-	.read           = seq_read,
-	.llseek         = seq_lseek,
-	.release        = single_release,
-};
+DEFINE_SHOW_ATTRIBUTE(dss);
 
 static struct dentry *dss_debugfs_dir;
 
@@ -130,15 +120,14 @@ static int dss_initialize_debugfs(void)
 	}
 
 	debugfs_create_file("clk", S_IRUGO, dss_debugfs_dir,
-			&dss_debug_dump_clocks, &dss_debug_fops);
+			&dss_debug_dump_clocks, &dss_fops);
 
 	return 0;
 }
 
 static void dss_uninitialize_debugfs(void)
 {
-	if (dss_debugfs_dir)
-		debugfs_remove_recursive(dss_debugfs_dir);
+	debugfs_remove_recursive(dss_debugfs_dir);
 }
 
 int dss_debugfs_create_file(const char *name, void (*write)(struct seq_file *))
@@ -146,7 +135,7 @@ int dss_debugfs_create_file(const char *name, void (*write)(struct seq_file *))
 	struct dentry *d;
 
 	d = debugfs_create_file(name, S_IRUGO, dss_debugfs_dir,
-			write, &dss_debug_fops);
+			write, &dss_fops);
 
 	return PTR_ERR_OR_ZERO(d);
 }
@@ -193,7 +182,6 @@ static struct notifier_block omap_dss_pm_notif_block = {
 
 static int __init omap_dss_probe(struct platform_device *pdev)
 {
-	struct omap_dss_board_info *pdata = pdev->dev.platform_data;
 	int r;
 
 	core.pdev = pdev;
@@ -206,8 +194,6 @@ static int __init omap_dss_probe(struct platform_device *pdev)
 
 	if (def_disp_name)
 		core.default_display_name = def_disp_name;
-	else if (pdata->default_display_name)
-		core.default_display_name = pdata->default_display_name;
 
 	register_pm_notifier(&omap_dss_pm_notif_block);
 

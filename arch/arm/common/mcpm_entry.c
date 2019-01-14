@@ -9,6 +9,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/export.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/irqflags.h>
@@ -174,6 +175,7 @@ bool mcpm_is_available(void)
 {
 	return (platform_ops) ? true : false;
 }
+EXPORT_SYMBOL_GPL(mcpm_is_available);
 
 /*
  * We can't use regular spinlocks. In the switcher case, it is possible
@@ -235,7 +237,7 @@ int mcpm_cpu_power_up(unsigned int cpu, unsigned int cluster)
 	return ret;
 }
 
-typedef void (*phys_reset_t)(unsigned long);
+typedef typeof(cpu_reset) phys_reset_t;
 
 void mcpm_cpu_power_down(void)
 {
@@ -300,7 +302,7 @@ void mcpm_cpu_power_down(void)
 	 * on the CPU.
 	 */
 	phys_reset = (phys_reset_t)(unsigned long)__pa_symbol(cpu_reset);
-	phys_reset(__pa_symbol(mcpm_entry_point));
+	phys_reset(__pa_symbol(mcpm_entry_point), false);
 
 	/* should never get here */
 	BUG();
@@ -389,7 +391,7 @@ static int __init nocache_trampoline(unsigned long _arg)
 	__mcpm_cpu_down(cpu, cluster);
 
 	phys_reset = (phys_reset_t)(unsigned long)__pa_symbol(cpu_reset);
-	phys_reset(__pa_symbol(mcpm_entry_point));
+	phys_reset(__pa_symbol(mcpm_entry_point), false);
 	BUG();
 }
 

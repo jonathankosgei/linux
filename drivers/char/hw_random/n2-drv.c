@@ -435,7 +435,7 @@ static int n2rng_data_read(struct hwrng *rng, u32 *data)
 			*data = np->test_data & 0xffffffff;
 			len = 4;
 		} else {
-			dev_err(&np->op->dev, "RNG error, restesting\n");
+			dev_err(&np->op->dev, "RNG error, retesting\n");
 			np->flags &= ~N2RNG_FLAG_READY;
 			if (!(np->flags & N2RNG_FLAG_SHUTDOWN))
 				schedule_delayed_work(&np->work, 0);
@@ -748,9 +748,7 @@ static int n2rng_probe(struct platform_device *op)
 
 	dev_info(&op->dev, "Registered RNG HVAPI major %lu minor %lu\n",
 		 np->hvapi_major, np->hvapi_minor);
-
-	np->units = devm_kzalloc(&op->dev,
-				 sizeof(struct n2rng_unit) * np->num_units,
+	np->units = devm_kcalloc(&op->dev, np->num_units, sizeof(*np->units),
 				 GFP_KERNEL);
 	err = -ENOMEM;
 	if (!np->units)

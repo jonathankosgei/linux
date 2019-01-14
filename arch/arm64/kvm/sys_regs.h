@@ -35,6 +35,9 @@ struct sys_reg_params {
 };
 
 struct sys_reg_desc {
+	/* Sysreg string for debug */
+	const char *name;
+
 	/* MRS/MSR instruction which accesses it. */
 	u8	Op0;
 	u8	Op1;
@@ -83,38 +86,20 @@ static inline bool read_zero(struct kvm_vcpu *vcpu,
 	return true;
 }
 
-static inline bool write_to_read_only(struct kvm_vcpu *vcpu,
-				      const struct sys_reg_params *params)
-{
-	kvm_debug("sys_reg write to read-only register at: %lx\n",
-		  *vcpu_pc(vcpu));
-	print_sys_reg_instr(params);
-	return false;
-}
-
-static inline bool read_from_write_only(struct kvm_vcpu *vcpu,
-					const struct sys_reg_params *params)
-{
-	kvm_debug("sys_reg read to write-only register at: %lx\n",
-		  *vcpu_pc(vcpu));
-	print_sys_reg_instr(params);
-	return false;
-}
-
 /* Reset functions */
 static inline void reset_unknown(struct kvm_vcpu *vcpu,
 				 const struct sys_reg_desc *r)
 {
 	BUG_ON(!r->reg);
 	BUG_ON(r->reg >= NR_SYS_REGS);
-	vcpu_sys_reg(vcpu, r->reg) = 0x1de7ec7edbadc0deULL;
+	__vcpu_sys_reg(vcpu, r->reg) = 0x1de7ec7edbadc0deULL;
 }
 
 static inline void reset_val(struct kvm_vcpu *vcpu, const struct sys_reg_desc *r)
 {
 	BUG_ON(!r->reg);
 	BUG_ON(r->reg >= NR_SYS_REGS);
-	vcpu_sys_reg(vcpu, r->reg) = r->val;
+	__vcpu_sys_reg(vcpu, r->reg) = r->val;
 }
 
 static inline int cmp_sys_reg(const struct sys_reg_desc *i1,
@@ -146,5 +131,11 @@ const struct sys_reg_desc *find_reg_by_id(u64 id,
 #define CRn(_x)		.CRn = _x
 #define CRm(_x) 	.CRm = _x
 #define Op2(_x) 	.Op2 = _x
+
+#define SYS_DESC(reg)					\
+	.name = #reg,					\
+	Op0(sys_reg_Op0(reg)), Op1(sys_reg_Op1(reg)),	\
+	CRn(sys_reg_CRn(reg)), CRm(sys_reg_CRm(reg)),	\
+	Op2(sys_reg_Op2(reg))
 
 #endif /* __ARM64_KVM_SYS_REGS_LOCAL_H__ */

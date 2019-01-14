@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -26,7 +27,13 @@ static int init_display(struct fbtft_par *par)
 	par->fbtftops.reset(par);
 
 	write_reg(par, 0xae); /* Display Off */
-	write_reg(par, 0xa0, 0x70 | (par->bgr << 2)); /* Set Colour Depth */
+
+	/* Set Column Address Mapping, COM Scan Direction and Colour Depth */
+	if (par->info->var.rotate == 180)
+		write_reg(par, 0xa0, 0x60 | (par->bgr << 2));
+	else
+		write_reg(par, 0xa0, 0x72 | (par->bgr << 2));
+
 	write_reg(par, 0x72); /* RGB colour */
 	write_reg(par, 0xa1, 0x00); /* Set Display Start Line */
 	write_reg(par, 0xa2, 0x00); /* Set Display Offset */
@@ -130,16 +137,16 @@ static int set_gamma(struct fbtft_par *par, u32 *curves)
 	for (i = 0; i < 63; i++) {
 		if (i > 0 && curves[i] < 2) {
 			dev_err(par->info->device,
-				"Illegal value in Grayscale Lookup Table at index %d. " \
-				"Must be greater than 1\n", i);
+				"Illegal value in Grayscale Lookup Table at index %d. Must be greater than 1\n",
+				i);
 			return -EINVAL;
 		}
 		acc += curves[i];
 		tmp[i] = acc;
 		if (acc > 180) {
 			dev_err(par->info->device,
-				"Illegal value(s) in Grayscale Lookup Table. " \
-				"At index=%d, the accumulated value has exceeded 180\n", i);
+				"Illegal value(s) in Grayscale Lookup Table. At index=%d, the accumulated value has exceeded 180\n",
+				i);
 			return -EINVAL;
 		}
 	}
@@ -161,7 +168,7 @@ static int set_gamma(struct fbtft_par *par, u32 *curves)
 
 static int blank(struct fbtft_par *par, bool on)
 {
-	fbtft_par_dbg(DEBUG_BLANK, par, "%s(blank=%s)\n",
+	fbtft_par_dbg(DEBUG_BLANK, par, "(%s=%s)\n",
 		      __func__, on ? "true" : "false");
 	if (on)
 		write_reg(par, 0xAE);

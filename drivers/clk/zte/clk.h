@@ -14,24 +14,6 @@
 
 #define PNAME(x) static const char *x[]
 
-#define CLK_HW_INIT(_name, _parent, _ops, _flags)			\
-	&(struct clk_init_data) {					\
-		.flags		= _flags,				\
-		.name		= _name,				\
-		.parent_names	= (const char *[]) { _parent },		\
-		.num_parents	= 1,					\
-		.ops		= _ops,					\
-	}
-
-#define CLK_HW_INIT_PARENTS(_name, _parents, _ops, _flags)		\
-	&(struct clk_init_data) {					\
-		.flags		= _flags,				\
-		.name		= _name,				\
-		.parent_names	= _parents,				\
-		.num_parents	= ARRAY_SIZE(_parents),			\
-		.ops		= _ops,					\
-	}
-
 struct zx_pll_config {
 	unsigned long rate;
 	u32 cfg0;
@@ -66,8 +48,12 @@ struct clk_zx_pll {
 				CLK_GET_RATE_NOCACHE),			\
 }
 
+/*
+ * The pd_bit is not available on ZX296718, so let's pass something
+ * bigger than 31, e.g. 0xff, to indicate that.
+ */
 #define ZX296718_PLL(_name, _parent, _reg, _table)			\
-ZX_PLL(_name, _parent, _reg, _table, 0, 30)
+ZX_PLL(_name, _parent, _reg, _table, 0xff, 30)
 
 struct zx_clk_gate {
 	struct clk_gate gate;

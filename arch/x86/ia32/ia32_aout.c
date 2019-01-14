@@ -176,10 +176,10 @@ static int aout_core_dump(struct coredump_params *cprm)
 
 	/* make sure we actually have a data and stack area to dump */
 	set_fs(USER_DS);
-	if (!access_ok(VERIFY_READ, (void *) (unsigned long)START_DATA(dump),
+	if (!access_ok((void *) (unsigned long)START_DATA(dump),
 		       dump.u_dsize << PAGE_SHIFT))
 		dump.u_dsize = 0;
-	if (!access_ok(VERIFY_READ, (void *) (unsigned long)START_STACK(dump),
+	if (!access_ok((void *) (unsigned long)START_STACK(dump),
 		       dump.u_ssize << PAGE_SHIFT))
 		dump.u_ssize = 0;
 
@@ -407,10 +407,10 @@ static int load_aout_library(struct file *file)
 	unsigned long bss, start_addr, len, error;
 	int retval;
 	struct exec ex;
-
+	loff_t pos = 0;
 
 	retval = -ENOEXEC;
-	error = kernel_read(file, 0, (char *) &ex, sizeof(ex));
+	error = kernel_read(file, &ex, sizeof(ex), &pos);
 	if (error != sizeof(ex))
 		goto out;
 

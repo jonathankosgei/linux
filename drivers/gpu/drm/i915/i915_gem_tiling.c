@@ -158,13 +158,8 @@ i915_tiling_ok(struct drm_i915_gem_object *obj,
 		if (stride > 8192)
 			return false;
 
-		if (IS_GEN3(i915)) {
-			if (obj->base.size > I830_FENCE_MAX_SIZE_VAL << 20)
-				return false;
-		} else {
-			if (obj->base.size > I830_FENCE_MAX_SIZE_VAL << 19)
-				return false;
-		}
+		if (!is_power_of_2(stride))
+			return false;
 	}
 
 	if (IS_GEN2(i915) ||
@@ -176,12 +171,7 @@ i915_tiling_ok(struct drm_i915_gem_object *obj,
 	if (!stride || !IS_ALIGNED(stride, tile_width))
 		return false;
 
-	/* 965+ just needs multiples of tile width */
-	if (INTEL_GEN(i915) >= 4)
-		return true;
-
-	/* Pre-965 needs power of two tile widths */
-	return is_power_of_2(stride);
+	return true;
 }
 
 static bool i915_vma_fence_prepare(struct i915_vma *vma,
@@ -215,10 +205,7 @@ i915_gem_object_fence_prepare(struct drm_i915_gem_object *obj,
 	if (tiling_mode == I915_TILING_NONE)
 		return 0;
 
-	list_for_each_entry(vma, &obj->vma_list, obj_link) {
-		if (!i915_vma_is_ggtt(vma))
-			break;
-
+	for_each_ggtt_vma(vma, obj) {
 		if (i915_vma_fence_prepare(vma, tiling_mode, stride))
 			continue;
 
@@ -248,7 +235,7 @@ i915_gem_object_set_tiling(struct drm_i915_gem_object *obj,
 	if ((tiling | stride) == obj->tiling_and_stride)
 		return 0;
 
-	if (obj->framebuffer_references)
+	if (i915_gem_object_is_framebuffer(obj))
 		return -EBUSY;
 
 	/* We need to rebind the object if its current allocation
@@ -268,12 +255,18 @@ i915_gem_object_set_tiling(struct drm_i915_gem_object *obj,
 	if (err)
 		return err;
 
+	i915_gem_object_lock(obj);
+	if (i915_gem_object_is_framebuffer(obj)) {
+		i915_gem_object_unlock(obj);
+		return -EBUSY;
+	}
+
 	/* If the memory has unknown (i.e. varying) swizzling, we pin the
 	 * pages to prevent them being swapped out and causing corruption
 	 * due to the change in swizzling.
 	 */
 	mutex_lock(&obj->mm.lock);
-	if (obj->mm.pages &&
+	if (i915_gem_object_has_pages(obj) &&
 	    obj->mm.madv == I915_MADV_WILLNEED &&
 	    i915->quirks & QUIRK_PIN_SWIZZLED_PAGES) {
 		if (tiling == I915_TILING_NONE) {
@@ -282,17 +275,14 @@ i915_gem_object_set_tiling(struct drm_i915_gem_object *obj,
 			obj->mm.quirked = false;
 		}
 		if (!i915_gem_object_is_tiled(obj)) {
-			GEM_BUG_ON(!obj->mm.quirked);
+			GEM_BUG_ON(obj->mm.quirked);
 			__i915_gem_object_pin_pages(obj);
 			obj->mm.quirked = true;
 		}
 	}
 	mutex_unlock(&obj->mm.lock);
 
-	list_for_each_entry(vma, &obj->vma_list, obj_link) {
-		if (!i915_vma_is_ggtt(vma))
-			break;
-
+	for_each_ggtt_vma(vma, obj) {
 		vma->fence_size =
 			i915_gem_fence_size(i915, vma->size, tiling, stride);
 		vma->fence_alignment =
@@ -304,6 +294,7 @@ i915_gem_object_set_tiling(struct drm_i915_gem_object *obj,
 	}
 
 	obj->tiling_and_stride = tiling | stride;
+	i915_gem_object_unlock(obj);
 
 	/* Force the fence to be reacquired for GTT access */
 	i915_gem_release_mmap(obj);
@@ -347,6 +338,15 @@ i915_gem_set_tiling_ioctl(struct drm_device *dev, void *data,
 	obj = i915_gem_object_lookup(file, args->handle);
 	if (!obj)
 		return -ENOENT;
+
+	/*
+	 * The tiling mode of proxy objects is handled by its generator, and
+	 * not allowed to be changed by userspace.
+	 */
+	if (i915_gem_object_is_proxy(obj)) {
+		err = -ENXIO;
+		goto err;
+	}
 
 	if (!i915_tiling_ok(obj, args->tiling_mode, args->stride)) {
 		err = -EINVAL;

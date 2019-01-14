@@ -46,7 +46,7 @@
  */
 
 /dts-v1/;
-/include/ "meson6.dtsi"
+#include "meson6.dtsi"
 
 / {
 	model = "Geniatech ATV1200";
@@ -54,6 +54,10 @@
 
 	aliases {
 		serial0 = &uart_AO;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
 	};
 
 	memory {

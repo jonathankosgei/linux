@@ -26,7 +26,6 @@
 #include "../intr.h"
 #include "../job.h"
 
-#define HOST1X_CHANNEL_SIZE 16384
 #define TRACE_MAX_LENGTH 128U
 
 static void trace_write_gather(struct host1x_cdma *cdma, struct host1x_bo *bo,
@@ -104,8 +103,7 @@ static int channel_submit(struct host1x_job *job)
 	sp = host->syncpt + job->syncpt_id;
 	trace_host1x_channel_submit(dev_name(ch->dev),
 				    job->num_gathers, job->num_relocs,
-				    job->num_waitchk, job->syncpt_id,
-				    job->syncpt_incrs);
+				    job->syncpt_id, job->syncpt_incrs);
 
 	/* before error checks, return current max */
 	prev_max = job->syncpt_end = host1x_syncpt_read_max(sp);
@@ -147,6 +145,8 @@ static int channel_submit(struct host1x_job *job)
 
 	syncval = host1x_syncpt_incr_max(sp, user_syncpt_incrs);
 
+	host1x_hw_syncpt_assign_to_channel(host, sp, ch);
+
 	job->syncpt_end = syncval;
 
 	/* add a setclass for modules that require it */
@@ -163,7 +163,7 @@ static int channel_submit(struct host1x_job *job)
 	trace_host1x_channel_submitted(dev_name(ch->dev), prev_max, syncval);
 
 	/* schedule a submit complete interrupt */
-	err = host1x_intr_add_action(host, job->syncpt_id, syncval,
+	err = host1x_intr_add_action(host, sp, syncval,
 				     HOST1X_INTR_ACTION_SUBMIT_COMPLETE, ch,
 				     completed_waiter, NULL);
 	completed_waiter = NULL;
@@ -178,14 +178,36 @@ error:
 	return err;
 }
 
+static void enable_gather_filter(struct host1x *host,
+				 struct host1x_channel *ch)
+{
+#if HOST1X_HW >= 6
+	u32 val;
+
+	if (!host->hv_regs)
+		return;
+
+	val = host1x_hypervisor_readl(
+		host, HOST1X_HV_CH_KERNEL_FILTER_GBUFFER(ch->id / 32));
+	val |= BIT(ch->id % 32);
+	host1x_hypervisor_writel(
+		host, val, HOST1X_HV_CH_KERNEL_FILTER_GBUFFER(ch->id / 32));
+#elif HOST1X_HW >= 4
+	host1x_ch_writel(ch,
+			 HOST1X_CHANNEL_CHANNELCTRL_KERNEL_FILTER_GBUFFER(1),
+			 HOST1X_CHANNEL_CHANNELCTRL);
+#endif
+}
+
 static int host1x_channel_init(struct host1x_channel *ch, struct host1x *dev,
 			       unsigned int index)
 {
-	ch->id = index;
-	mutex_init(&ch->reflock);
-	mutex_init(&ch->submitlock);
-
-	ch->regs = dev->regs + index * HOST1X_CHANNEL_SIZE;
+#if HOST1X_HW < 6
+	ch->regs = dev->regs + index * 0x4000;
+#else
+	ch->regs = dev->regs + index * 0x100;
+#endif
+	enable_gather_filter(dev, ch);
 	return 0;
 }
 

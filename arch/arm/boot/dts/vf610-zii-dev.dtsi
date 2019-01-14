@@ -49,7 +49,8 @@
 		stdout-path = "serial0:115200n8";
 	};
 
-	memory {
+	memory@80000000 {
+		device_type = "memory";
 		reg = <0x80000000 0x20000000>;
 	};
 
@@ -93,6 +94,10 @@
 };
 
 &edma0 {
+	status = "okay";
+};
+
+&edma1 {
 	status = "okay";
 };
 
@@ -218,6 +223,10 @@
 	status = "okay";
 };
 
+&tempsensor {
+	io-channels = <&adc0 16>;
+};
+
 &iomuxc {
 	pinctrl_adc0_ad5: adc0ad5grp {
 		fsl,pins = <
@@ -293,6 +302,18 @@
 			VF610_PAD_PTB20__GPIO_42	0x33e1
 			VF610_PAD_PTB19__GPIO_41	0x33e2
 			VF610_PAD_PTB18__GPIO_40	0x33e2
+		>;
+	};
+
+	pinctrl_gpio_switch0: pinctrl-gpio-switch0 {
+		fsl,pins = <
+			VF610_PAD_PTB5__GPIO_27		0x219d
+		>;
+	};
+
+	pinctrl_gpio_switch1: pinctrl-gpio-switch1 {
+		fsl,pins = <
+			VF610_PAD_PTB4__GPIO_26		0x219d
 		>;
 	};
 

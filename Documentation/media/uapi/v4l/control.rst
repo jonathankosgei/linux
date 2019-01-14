@@ -1,4 +1,11 @@
-.. -*- coding: utf-8; mode: rst -*-
+.. Permission is granted to copy, distribute and/or modify this
+.. document under the terms of the GNU Free Documentation License,
+.. Version 1.1 or any later version published by the Free Software
+.. Foundation, with no Invariant Sections, no Front-Cover Texts
+.. and no Back-Cover Texts. A copy of the license is included at
+.. Documentation/media/uapi/fdl-appendix.rst.
+..
+.. TODO: replace it to GFDL-1.1-or-later WITH no-invariant-sections
 
 .. _control:
 
@@ -136,6 +143,12 @@ Control IDs
 
 ``V4L2_CID_GAIN`` ``(integer)``
     Gain control.
+
+    Primarily used to control gain on e.g. TV tuners but also on
+    webcams. Most devices control only digital gain with this control
+    but on some this could include analogue gain as well. Devices that
+    recognise the difference between digital and analogue gain use
+    controls ``V4L2_CID_DIGITAL_GAIN`` and ``V4L2_CID_ANALOGUE_GAIN``.
 
 ``V4L2_CID_HFLIP`` ``(boolean)``
     Mirror the picture horizontally.

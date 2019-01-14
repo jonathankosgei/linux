@@ -12,8 +12,10 @@
  * 2 of the License, or (at your option) any later version.
  */
 
-#include <misc/cxl.h>
 #include <asm/unaligned.h>
+
+#include <linux/interrupt.h>
+#include <linux/pci.h>
 
 #include <scsi/scsi_host.h>
 #include <uapi/scsi/cxlflash_ioctl.h>
@@ -252,7 +254,7 @@ int cxlflash_manage_lun(struct scsi_device *sdev,
 		 * in unpacked, AFU-friendly format, and hang LUN reference in
 		 * the sdev.
 		 */
-		lli->port_sel |= CHAN2PORT(chan);
+		lli->port_sel |= CHAN2PORTMASK(chan);
 		lli->lun_id[chan] = lun_to_lunid(sdev->lun);
 		sdev->hostdata = lli;
 	} else if (flags & DK_CXLFLASH_MANAGE_LUN_DISABLE_SUPERPIPE) {
@@ -264,7 +266,7 @@ int cxlflash_manage_lun(struct scsi_device *sdev,
 			 * tracking when no more references exist.
 			 */
 			sdev->hostdata = NULL;
-			lli->port_sel &= ~CHAN2PORT(chan);
+			lli->port_sel &= ~CHAN2PORTMASK(chan);
 			if (lli->port_sel == 0U)
 				lli->in_table = false;
 		}

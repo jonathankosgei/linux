@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/skbuff.h>
 #include <linux/slab.h>
 #include <linux/netdevice.h>
@@ -13,7 +14,7 @@ int gro_cells_receive(struct gro_cells *gcells, struct sk_buff *skb)
 	struct net_device *dev = skb->dev;
 	struct gro_cell *cell;
 
-	if (!gcells->cells || skb_cloned(skb) || !(dev->features & NETIF_F_GRO))
+	if (!gcells->cells || skb_cloned(skb) || netif_elide_gro(dev))
 		return netif_rx(skb);
 
 	cell = this_cpu_ptr(gcells->cells);
@@ -83,6 +84,7 @@ void gro_cells_destroy(struct gro_cells *gcells)
 	for_each_possible_cpu(i) {
 		struct gro_cell *cell = per_cpu_ptr(gcells->cells, i);
 
+		napi_disable(&cell->napi);
 		netif_napi_del(&cell->napi);
 		__skb_queue_purge(&cell->napi_skbs);
 	}

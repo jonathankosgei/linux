@@ -1,13 +1,7 @@
-/*
- * Copyright (c) 2013 Samsung Electronics Co., Ltd
- *		http://www.samsung.com
- *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
- */
+// SPDX-License-Identifier: GPL-2.0+
+//
+// Copyright (c) 2013 Samsung Electronics Co., Ltd
+//		http://www.samsung.com
 
 #include <linux/bug.h>
 #include <linux/err.h>
@@ -213,7 +207,7 @@ ramp_disable:
 				  1 << enable_shift, 0);
 }
 
-static struct regulator_ops s2mpa01_ldo_ops = {
+static const struct regulator_ops s2mpa01_ldo_ops = {
 	.list_voltage		= regulator_list_voltage_linear,
 	.map_voltage		= regulator_map_voltage_linear,
 	.is_enabled		= regulator_is_enabled_regmap,
@@ -224,7 +218,7 @@ static struct regulator_ops s2mpa01_ldo_ops = {
 	.set_voltage_time_sel	= regulator_set_voltage_time_sel,
 };
 
-static struct regulator_ops s2mpa01_buck_ops = {
+static const struct regulator_ops s2mpa01_buck_ops = {
 	.list_voltage		= regulator_list_voltage_linear,
 	.map_voltage		= regulator_map_voltage_linear,
 	.is_enabled		= regulator_is_enabled_regmap,
@@ -359,11 +353,11 @@ static int s2mpa01_pmic_probe(struct platform_device *pdev)
 	if (iodev->dev->of_node) {
 		reg_np = of_get_child_by_name(iodev->dev->of_node,
 							"regulators");
-			if (!reg_np) {
-				dev_err(&pdev->dev,
-					"could not find regulators sub-node\n");
-				return -EINVAL;
-			}
+		if (!reg_np) {
+			dev_err(&pdev->dev,
+				"could not find regulators sub-node\n");
+			return -EINVAL;
+		}
 
 		of_regulator_match(&pdev->dev, reg_np, rdata,
 						S2MPA01_REGULATOR_MAX);
